@@ -56,3 +56,7 @@ Once the application window appears:
 ## Disclaimer
 
 This script is provided as-is. While it is designed to be safe, you are responsible for the updates you choose to install. Always ensure you have backups of important data before performing system updates. Use this tool at your own risk.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
