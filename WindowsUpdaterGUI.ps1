@@ -95,11 +95,41 @@ $DropBg = "#004C7A"
 
         <TextBlock Text="Available Windows Updates" FontSize="20" FontWeight="SemiBold" Foreground="$TextFg" />
 
-        <Border Grid.Row="1" BorderBrush="$Border" BorderThickness="1" Background="$ControlBg" Margin="0,10,0,10">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel x:Name="UpdateList" Margin="5" />
-            </ScrollViewer>
-        </Border>
+        <Grid Grid.Row="1" Margin="0,10,0,10">
+            <ListView x:Name="UpdateList" Background="$ControlBg" Foreground="$TextFg" BorderBrush="$Border" BorderThickness="1">
+                <ListView.Resources>
+                    <!-- Style to make GridView headers match the Dark Theme -->
+                    <Style TargetType="GridViewColumnHeader">
+                        <Setter Property="Background" Value="$ControlBg"/>
+                        <Setter Property="Foreground" Value="$TextFg"/>
+                        <Setter Property="FontWeight" Value="SemiBold"/>
+                        <Setter Property="Padding" Value="5,5,5,5"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                    </Style>
+                </ListView.Resources>
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="Foreground" Value="{Binding Color}"/>
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Width="40">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Title" DisplayMemberBinding="{Binding Title}" Width="350"/>
+                        <GridViewColumn Header="KB Article" DisplayMemberBinding="{Binding KBArticle}" Width="100"/>
+                        <GridViewColumn Header="Type" DisplayMemberBinding="{Binding TypeStr}" Width="90"/>
+                        <GridViewColumn Header="Release Date" DisplayMemberBinding="{Binding ReleaseDate}" Width="100"/>
+                        <GridViewColumn Header="Size" DisplayMemberBinding="{Binding SizeStr}" Width="80"/>
+                    </GridView>
+                </ListView.View>
+            </ListView>
+        </Grid>
 
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
@@ -145,7 +175,7 @@ function Do-Events {
 
 $ScanBtn.Add_Click({
         $StatusText.Text = "Scanning for updates... Please wait."
-        $UpdateList.Children.Clear()
+        $UpdateList.ItemsSource = $null
         $ScanBtn.IsEnabled = $false
         $InstallBtn.IsEnabled = $false
         Do-Events
@@ -160,11 +190,29 @@ $ScanBtn.Add_Click({
             Write-Host "No updates found." -ForegroundColor DarkGray
         }
         else {
+            $UpdateData = New-Object System.Collections.ArrayList
             foreach ($u in $updates) {
-                $kb = $u.KBArticleID
-                if ($kb -is [array]) { $kb = $kb[0] }
+                $kb = if ($u.KBArticleIDs -and $u.KBArticleIDs.Count -gt 0) {
+                    "KB$($u.KBArticleIDs[0])"
+                }
+                elseif ($u.KBArticleID) {
+                    "KB$($u.KBArticleID -replace '^KB', '')"
+                }
+                else {
+                    "N/A"
+                }
 
                 $title = $u.Title
+
+                # Microsoft often embeds the KB article directly in the update title.
+                # Let's strip it out so it doesn't appear redundantly in the main body column.
+                if ($kb -ne "N/A") {
+                    $escapedKb = [regex]::Escape($kb)
+                    $title = $title -replace "\(\s*$escapedKb\s*\)", ""
+                    $title = $title -replace $escapedKb, ""
+                    $title = $title.Trim()
+                }
+
                 $cat = $u.Categories -join ', '
 
                 # Calculate Size
@@ -172,73 +220,73 @@ $ScanBtn.Add_Click({
                 if ($null -ne $u.Size -and $u.Size -gt 0) {
                     if ($u.Size -ge 1GB) {
                         $sizeVal = [math]::Round($u.Size / 1GB, 2)
-                        $sizeStr = " - ${sizeVal} GB"
+                        $sizeStr = "${sizeVal} GB"
                     }
                     else {
                         $sizeVal = [math]::Round($u.Size / 1MB, 2)
-                        $sizeStr = " - ${sizeVal} MB"
+                        $sizeStr = "${sizeVal} MB"
                     }
                 }
 
                 # Get Release Date
                 $dateStr = ""
                 if ($null -ne $u.LastDeploymentChangeTime) {
-                    $dateStr = " - Released: $("{0:yyyy-MM-dd}" -f $u.LastDeploymentChangeTime)"
+                    $dateStr = "{0:yyyy-MM-dd}" -f $u.LastDeploymentChangeTime
                 }
-                $title = "$title$sizeStr$dateStr"
 
                 # Determine colors based on categories
                 if ($cat -match 'Upgrade' -or $title -match 'Upgrade') {
                     $uiColor = "Red"
                     $consoleColor = "Red"
                     $prefix = "[FULL VERSION UPDATE]"
-                    $title = "$title (Full Version)"
+                    $typeStr = "Full Version"
                 }
                 elseif ($cat -match 'Feature' -or $title -match 'Feature Update' -or $title -match 'version \d{2}[Hh]\d') {
                     $uiColor = "Orange"
                     $consoleColor = "DarkYellow"
                     $prefix = "[FEATURE UPDATE]"
-                    $title = "$title (Feature)"
+                    $typeStr = "Feature"
                 }
                 elseif ($cat -match 'Security' -or $title -match 'Security') {
                     $uiColor = "LightGreen"
                     $consoleColor = "Green"
                     $prefix = "[SECURITY UPDATE]"
-                    $title = "$title (Security)"
+                    $typeStr = "Security"
                 }
                 else {
                     $uiColor = $TextFg
                     $consoleColor = "White"
                     $prefix = "[OTHER UPDATE]"
+                    $typeStr = "Other"
                 }
+
+                # Keep the original formatting for the terminal logs
+                $consoleInfo = "$title"
+                if ($sizeStr) { $consoleInfo += " - $sizeStr" }
+                if ($dateStr) { $consoleInfo += " - Released: $dateStr" }
 
                 # Display in terminal
                 if ($kb) {
-                    Write-Host "$prefix $kb - $title" -ForegroundColor $consoleColor
+                    Write-Host "$prefix $kb - $consoleInfo" -ForegroundColor $consoleColor
                 }
                 else {
-                    Write-Host "$prefix $title" -ForegroundColor $consoleColor
+                    Write-Host "$prefix $consoleInfo" -ForegroundColor $consoleColor
                 }
 
-                # Create Checkbox and TextBlock for the UI
-                $tb = New-Object System.Windows.Controls.TextBlock
-                if ($kb) {
-                    $tb.Text = "[$kb] $title"
+                $item = [PSCustomObject]@{
+                    IsChecked   = $false
+                    Title       = $title
+                    KBArticle   = $kb
+                    TypeStr     = $typeStr
+                    ReleaseDate = $dateStr
+                    SizeStr     = $sizeStr
+                    Color       = $uiColor
+                    RawObject   = $u
                 }
-                else {
-                    $tb.Text = $title
-                }
-                $tb.Foreground = $uiColor
-                $tb.TextWrapping = "Wrap"
-
-                $cb = New-Object System.Windows.Controls.CheckBox
-                $cb.Content = $tb
-                $cb.Tag = $u # Store the entire update object, not just the KB ID
-                $cb.Margin = "0,5,0,5"
-
-                $UpdateList.Children.Add($cb) | Out-Null
+                $UpdateData.Add($item) | Out-Null
             }
-            $StatusText.Text = "Scan complete. $($UpdateList.Children.Count) update(s) found. Select the ones you wish to install."
+            $UpdateList.ItemsSource = $UpdateData
+            $StatusText.Text = "Scan complete. $($UpdateData.Count) update(s) found. Select the ones you wish to install."
             $InstallBtn.IsEnabled = $true
         }
 
@@ -252,10 +300,10 @@ $InstallBtn.Add_Click({
         Do-Events
 
         Write-Host "`n--- Beginning Update Installation ---" -ForegroundColor Cyan
-        foreach ($cb in $UpdateList.Children) {
-            if ($cb.IsChecked -eq $true) {
-                $updateObject = $cb.Tag
-                $updateTitle = $cb.Content.Text
+        foreach ($item in $UpdateList.ItemsSource) {
+            if ($item.IsChecked -eq $true) {
+                $updateObject = $item.RawObject
+                $updateTitle = $item.Title
 
                 if ($updateObject) {
                     Write-Host "Installing $updateTitle ..." -ForegroundColor Yellow
