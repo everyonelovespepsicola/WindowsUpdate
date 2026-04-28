@@ -95,8 +95,6 @@ $DropBg = "#004C7A"
 
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
             <TextBlock Text="Available Windows Updates" FontSize="20" FontWeight="SemiBold" Foreground="$TextFg" VerticalAlignment="Center" />
-            <!-- MS-DEFCON Status Indicator -->
-            <TextBlock x:Name="DefconStatusText" Text="" FontSize="14" FontWeight="Bold" Foreground="Gray" VerticalAlignment="Center" Margin="20,0,0,0" ToolTip="Global AskWoody MS-DEFCON Status" />
         </StackPanel>
 
         <Grid Grid.Row="1" Margin="0,10,0,10">
@@ -122,13 +120,6 @@ $DropBg = "#004C7A"
                             <GridViewColumn.CellTemplate>
                                 <DataTemplate>
                                     <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-                        <GridViewColumn Header="Status" Width="55">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <Ellipse Width="12" Height="12" Fill="{Binding DefconColor}" Stroke="#1E1E1E" StrokeThickness="1" HorizontalAlignment="Center" ToolTip="{Binding DefconReason}"/>
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
@@ -166,7 +157,6 @@ $UpdateList = $Window.FindName("UpdateList")
 $ScanBtn = $Window.FindName("ScanBtn")
 $InstallBtn = $Window.FindName("InstallBtn")
 $StatusText = $Window.FindName("StatusText")
-$DefconStatusText = $Window.FindName("DefconStatusText")
 
 # 3. Apply Dark Mode to Title Bar
 $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).EnsureHandle()
@@ -186,81 +176,9 @@ function Do-Events {
 # --- EVENTS ---
 
 $ScanBtn.Add_Click({
-        $StatusText.Text = "Fetching AskWoody MS-DEFCON status..."
         $UpdateList.ItemsSource = $null
         $ScanBtn.IsEnabled = $false
         $InstallBtn.IsEnabled = $false
-        Do-Events
-
-        # --- ASKWOODY SCRAPER ---
-        Write-Host "`nScraping AskWoody.com for MS-DEFCON status..." -ForegroundColor Cyan
-        $globalDefcon = "Unknown"
-        $globalDefconColor = "Gray"
-        $awHtml = ""
-
-        try {
-            # Ensure TLS 1.2 is used for the connection (required by most modern websites)
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-            # Use an alternative proxy (api.codetabs.com) to bypass Web Application Firewalls (WAF)
-            # like Cloudflare/Sucuri that block PowerShell's TLS fingerprint with a 403 Forbidden.
-            $targetUrl = [uri]::EscapeDataString("https://www.askwoody.com/")
-            $proxyUrl = "https://api.codetabs.com/v1/proxy?quest=$targetUrl"
-
-            # Scrape the main AskWoody page for the DEFCON status via the proxy with an auto-retry loop
-            $maxAttempts = 3
-            $attempt = 0
-            $success = $false
-
-            Write-Host "Constructed proxy URL: $proxyUrl" -ForegroundColor DarkGray
-
-            while (-not $success -and $attempt -lt $maxAttempts) {
-                try {
-                    if ($attempt -gt 0) {
-                        Write-Host "Proxy request timed out. Retrying ($attempt of $($maxAttempts - 1))..." -ForegroundColor DarkYellow
-                        Start-Sleep -Seconds 2
-                    }
-                    Write-Host "Sending request (Attempt $($attempt + 1) of $maxAttempts)..." -ForegroundColor Gray
-                    $awRequest = Invoke-WebRequest -Uri $proxyUrl -UseBasicParsing -TimeoutSec 30
-                    Write-Host "Request successful! Received response." -ForegroundColor Green
-                    $awHtml = $awRequest.Content # Keep raw content for simple KB matching
-                    $success = $true
-                }
-                catch {
-                    Write-Host "Attempt $($attempt + 1) failed: $($_.Exception.Message)" -ForegroundColor DarkRed
-                    $attempt++
-                    if ($attempt -ge $maxAttempts) {
-                        throw $_ # Re-throw the exception to the outer catch block after max attempts
-                    }
-                }
-            }
-
-            if ($awHtml -match '(?i)Microsoft Patch Defense Condition level (\d)') {
-                $globalDefcon = $matches[1]
-            }
-
-            if ($globalDefcon -ne "Unknown") {
-                switch ($globalDefcon) {
-                    '1' { $globalDefconColor = "Red" }
-                    '2' { $globalDefconColor = "Orange" }
-                    '3' { $globalDefconColor = "Yellow" }
-                    '4' { $globalDefconColor = "LightGreen" }
-                    '5' { $globalDefconColor = "LightBlue" }
-                }
-                Write-Host "MS-DEFCON Level $globalDefcon detected." -ForegroundColor $globalDefconColor
-            }
-            else {
-                Write-Host "Could not determine MS-DEFCON level from AskWoody.com homepage." -ForegroundColor DarkYellow
-            }
-        }
-        catch {
-            Write-Host "Failed to reach AskWoody.com: $($_.Exception.Message)" -ForegroundColor Red
-        }
-
-        $DefconStatusText.Text = if ($globalDefcon -ne "Unknown") { "MS-DEFCON: Level $globalDefcon" } else { "MS-DEFCON: Unknown" }
-        $DefconStatusText.Foreground = if ($globalDefconColor -eq "Gray") { "White" } else { $globalDefconColor }
-        Do-Events
-        # ------------------------
 
         $StatusText.Text = "Scanning for Windows updates... Please wait."
         Do-Events
@@ -344,26 +262,6 @@ $ScanBtn.Add_Click({
                     $typeStr = "Other"
                 }
 
-                # --- DEFCON Status Check ---
-                $defconColor = "DimGray"
-                $defconReason = "No community data available for this update."
-
-                # Check the scraped AskWoody content
-                if ($kb -ne "N/A" -and $awHtml -ne "") {
-                    if ($awHtml -match [regex]::Escape($kb)) {
-                        # If found in scrape, but global DEFCON is unknown, flag as Red.
-                        $defconColor = if ($globalDefconColor -eq "Gray") { "Red" } else { $globalDefconColor }
-                        $defconReason = "Warning: $kb is actively mentioned on AskWoody!"
-                        if ($globalDefcon -ne "Unknown") {
-                            $defconReason += "`nGlobal DEFCON Level: $globalDefcon"
-                        }
-                    }
-                    else {
-                        $defconColor = "LightGray"
-                        $defconReason = "KB not mentioned in recent AskWoody posts."
-                    }
-                }
-
                 # Keep the original formatting for the terminal logs
                 $consoleInfo = "$title"
                 if ($sizeStr) { $consoleInfo += " - $sizeStr" }
@@ -377,7 +275,7 @@ $ScanBtn.Add_Click({
                     Write-Host "$prefix $consoleInfo" -ForegroundColor $consoleColor
                 }
 
-                # Default all items to unchecked. A red DEFCON status is a strong visual indicator to not install.
+                # Default all items to unchecked.
                 $item = [PSCustomObject]@{
                     IsChecked    = $false
                     Title        = $title
@@ -386,8 +284,6 @@ $ScanBtn.Add_Click({
                     ReleaseDate  = $dateStr
                     SizeStr      = $sizeStr
                     Color        = $uiColor
-                    DefconColor  = $defconColor
-                    DefconReason = $defconReason
                     RawObject    = $u
                 }
                 $UpdateData.Add($item) | Out-Null

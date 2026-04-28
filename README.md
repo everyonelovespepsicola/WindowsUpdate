@@ -4,7 +4,6 @@ A modern, dark-themed PowerShell script that provides a graphical user interface
 
 ![Windows Update Manager - UI](01.png)
 
-![Windows Update Manager - Scanning](02.png)
 
 ---
 
