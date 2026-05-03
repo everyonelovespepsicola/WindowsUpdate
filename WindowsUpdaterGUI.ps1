@@ -1,4 +1,4 @@
-﻿#Requires -RunAsAdministrator
+#Requires -RunAsAdministrator
 
 # Force loading of necessary .NET assemblies
 Add-Type -AssemblyName PresentationFramework
@@ -277,14 +277,14 @@ $ScanBtn.Add_Click({
 
                 # Default all items to unchecked.
                 $item = [PSCustomObject]@{
-                    IsChecked    = $false
-                    Title        = $title
-                    KBArticle    = $kb
-                    TypeStr      = $typeStr
-                    ReleaseDate  = $dateStr
-                    SizeStr      = $sizeStr
-                    Color        = $uiColor
-                    RawObject    = $u
+                    IsChecked   = $false
+                    Title       = $title
+                    KBArticle   = $kb
+                    TypeStr     = $typeStr
+                    ReleaseDate = $dateStr
+                    SizeStr     = $sizeStr
+                    Color       = $uiColor
+                    RawObject   = $u
                 }
                 $UpdateData.Add($item) | Out-Null
             }
