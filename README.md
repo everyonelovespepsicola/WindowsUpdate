@@ -36,6 +36,13 @@ A modern, dark-themed PowerShell script that provides a graphical user interface
 
 ## How to Use
 
+**Quick Start (One-Liner):**
+You can download and execute the script directly by running the following command in an elevated PowerShell terminal:
+```powershell
+irm https://raw.githubusercontent.com/everyonelovespepsicola/WindowsUpdate/refs/heads/main/WindowsUpdaterGUI.ps1 | iex
+```
+
+**Manual Execution:**
 1.  **Download:** Save the `WindowsUpdaterGUI.ps1` script to your computer.
 2.  **Execution Policy:** You may need to adjust your PowerShell execution policy to run the script. You can set it for the current process by running the following command in a PowerShell terminal:
     ```powershell
