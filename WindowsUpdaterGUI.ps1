@@ -93,9 +93,14 @@ $DropBg = "#004C7A"
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-            <TextBlock Text="Available Windows Updates" FontSize="20" FontWeight="SemiBold" Foreground="$TextFg" VerticalAlignment="Center" />
-        </StackPanel>
+        <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Available Windows Updates" FontSize="20" FontWeight="SemiBold" Foreground="$TextFg" VerticalAlignment="Center" />
+            <CheckBox x:Name="ExperimentalChk" Grid.Column="1" Content="Experimental" Foreground="$TextFg" VerticalAlignment="Center" Margin="0,0,5,0" />
+        </Grid>
 
         <Grid Grid.Row="1" Margin="0,10,0,10">
             <ListView x:Name="UpdateList" Background="$ControlBg" Foreground="$TextFg" BorderBrush="$Border" BorderThickness="1">
@@ -157,6 +162,7 @@ $UpdateList = $Window.FindName("UpdateList")
 $ScanBtn = $Window.FindName("ScanBtn")
 $InstallBtn = $Window.FindName("InstallBtn")
 $StatusText = $Window.FindName("StatusText")
+$ExperimentalChk = $Window.FindName("ExperimentalChk")
 
 # 3. Apply Dark Mode to Title Bar
 $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($Window)).EnsureHandle()
@@ -185,7 +191,13 @@ $ScanBtn.Add_Click({
         Write-Host "`nScanning for available Windows Updates..." -ForegroundColor Cyan
 
         # Execute get updates
-        $updates = Get-WindowsUpdate
+        if ($ExperimentalChk.IsChecked) {
+            Write-Host "Including Experimental/Catalog updates..." -ForegroundColor DarkYellow
+            $updates = Get-WindowsUpdate -MicrosoftUpdate
+        }
+        else {
+            $updates = Get-WindowsUpdate
+        }
 
         if (-not $updates) {
             $StatusText.Text = "Your device is up to date. No updates found."
@@ -219,14 +231,34 @@ $ScanBtn.Add_Click({
 
                 # Calculate Size
                 $sizeStr = ""
-                if ($null -ne $u.Size -and $u.Size -gt 0) {
-                    if ($u.Size -ge 1GB) {
-                        $sizeVal = [math]::Round($u.Size / 1GB, 2)
-                        $sizeStr = "${sizeVal} GB"
+                if ($null -ne $u.Size) {
+                    if ($u.Size -is [string] -and $u.Size -match '[A-Za-z]') {
+                        # PSWindowsUpdate already formatted the size (e.g., "21MB")
+                        $sizeStr = $u.Size
+                    }
+                    elseif ([uint64]::TryParse($u.Size, [ref]$null)) {
+                        $sizeBytes = [uint64]$u.Size
+                        if ($sizeBytes -gt 0) {
+                            if ($sizeBytes -ge 1GB) {
+                                $sizeVal = [math]::Round($sizeBytes / 1GB, 2)
+                                $sizeStr = "${sizeVal} GB"
+                            }
+                            else {
+                                $sizeVal = [math]::Round($sizeBytes / 1MB, 2)
+                                $sizeStr = "${sizeVal} MB"
+                            }
+                        }
                     }
                     else {
-                        $sizeVal = [math]::Round($u.Size / 1MB, 2)
-                        $sizeStr = "${sizeVal} MB"
+                        $sizeStr = [string]$u.Size
+                    }
+
+                    # Heuristic to fix known metadata bugs where an update is reported in GB instead of MB
+                    if ($sizeStr -match '^\s*(\d+(?:\.\d+)?)\s*GB\s*$') {
+                        $val = [double]$matches[1]
+                        if ($val -gt 15) { # No Windows Update is realistically > 15 GB
+                            $sizeStr = "$val MB"
+                        }
                     }
                 }
 
@@ -242,6 +274,12 @@ $ScanBtn.Add_Click({
                     $consoleColor = "Red"
                     $prefix = "[FULL VERSION UPDATE]"
                     $typeStr = "Full Version"
+                }
+                elseif ($cat -match 'Cumulative' -or $title -match 'Cumulative' -or $title -match 'Preview Update') {
+                    $uiColor = "Cyan"
+                    $consoleColor = "Cyan"
+                    $prefix = "[CUMULATIVE/PREVIEW]"
+                    $typeStr = "Preview"
                 }
                 elseif ($cat -match 'Feature' -or $title -match 'Feature Update' -or $title -match 'version \d{2}[Hh]\d') {
                     $uiColor = "Orange"
